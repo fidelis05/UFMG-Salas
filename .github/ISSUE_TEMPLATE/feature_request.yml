@@ -1,0 +1,36 @@
+name: ✨ Solicitar nova funcionalidade
+description: Sugira uma ideia ou melhoria para o projeto.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Sua solicitação está relacionada a um problema?
+      description: Descreva o problema ou a necessidade. Ex- "Fico frustrado quando..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Descreva a solução que você gostaria
+      description: O que você gostaria que acontecesse?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: Outras soluções ou funcionalidades que você já pensou.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Contexto adicional
+      description: Qualquer outro contexto, screenshots ou exemplos sobre a solicitação.
+    validations:
+      required: false

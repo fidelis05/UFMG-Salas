@@ -1,0 +1,69 @@
+name: 🐛 Reportar um bug
+description: Algo não está funcionando como deveria.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrição do bug
+      description: Explique claramente qual é o problema.
+      placeholder: 'Ex: Ao clicar em "Atualizar Grade", a página fica carregando para sempre.'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      description: Como podemos reproduzir o problema?
+      placeholder: |
+        1. Acesse a página '...'
+        2. Clique em '...'
+        3. Veja o erro
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+      description: O que deveria acontecer?
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Se possível, adicione capturas de tela do problema (arraste as imagens aqui).
+    validations:
+      required: false
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Dispositivo
+      options:
+        - Celular
+        - Computador
+        - Tablet
+        - Outro
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Navegador
+      placeholder: "Ex: Chrome, Safari, Firefox"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Informações adicionais
+      description: Qualquer outro contexto sobre o problema.
+    validations:
+      required: false
