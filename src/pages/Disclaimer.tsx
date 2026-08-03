@@ -60,6 +60,18 @@ const Disclaimer = () => {
           de informações desatualizadas, indisponibilidade do serviço ou uso
           indevido dos dados aqui apresentados.
         </p>
+
+        <p className="text-gray-600">
+          Para solicitações de remoção de conteúdo (takedown) ou outras
+          questões relacionadas a este projeto, entre em contato pelo e-mail{" "}
+          <a
+            href="mailto:miguel.martins@ijunior.com.br"
+            className="text-[#D44A61] font-medium hover:underline"
+          >
+            miguel.martins@ijunior.com.br
+          </a>
+          .
+        </p>
       </div>
     </div>
   );
