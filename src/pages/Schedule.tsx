@@ -84,13 +84,13 @@ const Schedule = () => {
   const todayDayName = todayIndex > 0 ? weekDays[todayIndex - 1] : "";
 
   return (
-    <div className="relative flex h-fit">
+    <div className="relative flex flex-1 min-h-0">
       <div className="flex-1 min-w-0 flex justify-between">
-        <div className="flex-1 min-w-0 h-full bg-[#F8F8F8] py-4 pr-0">
+        <div className="flex-1 min-w-0 h-full min-h-[700px] bg-[#F8F8F8] py-4 pr-0">
           <div className="w-full h-full overflow-x-scroll overflow-y-hidden pr-8">
-            <div className="min-w-fit relative">
+            <div className="min-w-fit h-full flex flex-col relative">
               {/* Header with Hours */}
-              <div className="flex h-6 sticky top-0 z-30">
+              <div className="flex h-6 flex-shrink-0 sticky top-0 z-30">
                 <div className="w-[4.5rem] flex-shrink-0 sticky left-0 z-40 "></div>
                 <div
                   className="relative flex-grow"
@@ -111,9 +111,9 @@ const Schedule = () => {
               </div>
 
               {/* Schedule Body */}
-              <div className="relative">
+              <div className="relative flex-1 flex flex-col gap-2 pt-2 min-h-0">
                 {/* Vertical Grid Lines (Background) */}
-                <div className="absolute inset-0 ml-[4.5rem] h-[140%] -translate-y-2 pointer-events-none z-0">
+                <div className="absolute inset-0 ml-[4.5rem] h-full pointer-events-none z-0">
                   {hours.map((h) => (
                     <div
                       key={h}
@@ -135,7 +135,7 @@ const Schedule = () => {
                   return (
                     <div
                       key={day}
-                      className={`flex h-26 relative group mt-2 after:border-b after:w-[100%] after:h-0 after:border-neutral-200 after:-bottom-1 after:absolute  ${
+                      className={`flex flex-1 min-h-0 relative group after:border-b after:w-[100%] after:h-0 after:border-neutral-200 after:-bottom-1 after:absolute  ${
                         isToday
                           ? "bg-[#D44A61] inset-shadow-[0_7px_10px_0_rgba(0,0,0,0.25)]"
                           : ""
