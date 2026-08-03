@@ -7,5 +7,4 @@ export default interface ScheduleResponse {
   earliestTime: string;
   latestTime: string;
   schedule: { [day: string]: ClassItem[] }[];
-  studentName?: string;
 }
