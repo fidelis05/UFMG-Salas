@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
+import ExportIcsModal from "./ExportIcsModal";
 
 interface NavigationProps {
   open: boolean;
@@ -9,8 +11,24 @@ const expandedLabelClass =
   "whitespace-nowrap overflow-hidden transition-opacity duration-200 opacity-0 md:group-hover:opacity-100";
 const expandedLabelOpenClass = "max-md:opacity-100";
 
+function hasCachedSchedule(): boolean {
+  return !!localStorage.getItem("schedule");
+}
+
 export default function Navigation({ open, onClose }: NavigationProps) {
   const location = useLocation();
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [hasSchedule, setHasSchedule] = useState(hasCachedSchedule);
+
+  useEffect(() => {
+    setHasSchedule(hasCachedSchedule());
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handler = () => setHasSchedule(hasCachedSchedule());
+    window.addEventListener("schedule-updated", handler);
+    return () => window.removeEventListener("schedule-updated", handler);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -131,6 +149,41 @@ export default function Navigation({ open, onClose }: NavigationProps) {
               </Link>
             );
           })}
+          {hasSchedule && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                setExportModalOpen(true);
+              }}
+              className="flex items-center gap-3 px-3 py-3 rounded-lg transition-colors text-gray-600 hover:bg-gray-100 w-full"
+            >
+              <span className="flex-shrink-0">
+                <svg
+                  xmlns="http://www.w000.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+              </span>
+              <span
+                className={`${expandedLabelClass} ${
+                  open ? expandedLabelOpenClass : ""
+                }`}
+              >
+                Exportar calendário
+              </span>
+            </button>
+          )}
         </nav>
         <div className="p-3 border-t border-gray-200 space-y-1 flex-shrink-0">
           <button
@@ -181,6 +234,11 @@ export default function Navigation({ open, onClose }: NavigationProps) {
           );
         })}
       </nav>
+
+      <ExportIcsModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+      />
     </>
   );
 }
