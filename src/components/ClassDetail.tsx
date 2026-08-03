@@ -111,7 +111,7 @@ export function ClassDetail({ selected, onClose }: ClassDetailProps) {
     <>
       {/* Desktop: slides in from the right, resizing the schedule view */}
       <div
-        className={`hidden md:block h-full flex-shrink-0 bg-white border-l border-gray-200 overflow-hidden transition-[width] duration-300 ease-in-out ${
+        className={`hidden md:block h-dvh flex-shrink-0 bg-white border-l border-gray-200 overflow-hidden transition-[width] duration-300 ease-in-out ${
           open ? "w-80" : "w-0"
         }`}
       >
