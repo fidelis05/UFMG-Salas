@@ -12,4 +12,12 @@ export default interface ClassItem {
   workload: string;
   classType: string;
   department: string;
+  correction?: {
+    approvedRoom?: string;
+    status: "pending" | "approved";
+    proposals: {
+      proposedRoom: string;
+      isProposer: boolean;
+    }[];
+  };
 }

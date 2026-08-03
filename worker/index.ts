@@ -1,7 +1,20 @@
-import { handleScheduleWebSocket } from "./schedule";
+import { fetchMatriculas, handleScheduleWebSocket } from "./schedule";
 import { compilarSalas } from "./scraping/horarios";
+import {
+  applySubmission,
+  buildCorrectionKey,
+  expandDias,
+  getCorrection,
+  hashUser,
+  listCorrectionSlots,
+  putCorrection,
+  toClientCorrection,
+  validateRoomName,
+  withinRateLimit,
+  type CorrectionsEnv,
+} from "./corrections";
 
-interface Env {
+interface Env extends CorrectionsEnv {
   Salas: KVNamespace;
 }
 
@@ -52,9 +65,8 @@ export default {
       if (!roomDataStr) {
         return new Response("Room data not found", { status: 500 });
       }
-      const roomData = JSON.parse(roomDataStr);
 
-      return handleScheduleWebSocket(token, roomData);
+      return handleScheduleWebSocket(token, JSON.parse(roomDataStr), env);
     }
 
     if (url.pathname === "/api/login" && request.method === "POST") {
@@ -111,6 +123,95 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/corrections" && request.method === "POST") {
+      const cookieHeader = request.headers.get("Cookie") || "";
+      const ltpaMatch = cookieHeader.match(/LtpaToken2=([^;]+)/);
+      const token = ltpaMatch?.[1];
+
+      if (!token) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      // Refuse to write rather than store weakly-pseudonymised identifiers.
+      if (!env.CORRECTION_HASH_SECRET) {
+        return new Response("Correções indisponíveis no momento.", { status: 503 });
+      }
+
+      try {
+        const body = (await request.json()) as Record<string, unknown>;
+        const { codigo_materia, turma, dia_semana, hora_inicial } = body;
+
+        if (
+          typeof codigo_materia !== "string" ||
+          typeof turma !== "string" ||
+          typeof dia_semana !== "string" ||
+          typeof hora_inicial !== "string"
+        ) {
+          return new Response("Campos obrigatórios ausentes.", { status: 400 });
+        }
+
+        const roomCheck = validateRoomName(body.nome_sala);
+        if (!roomCheck.ok) {
+          return new Response(roomCheck.error, { status: 400 });
+        }
+
+        let matriculasData;
+        try {
+          matriculasData = await fetchMatriculas(token);
+        } catch {
+          return new Response("Sessão expirada, faça login novamente.", { status: 401 });
+        }
+
+        const list = matriculasData?.listaObj?.[0]?.matriculas || [];
+        // Verified against the student's own enrolments, so a forged day/time
+        // fails here rather than writing a bogus key.
+        const isEnrolled = list.some((m: any) => {
+          if (m.turma.atividadeAcademica.codigo !== codigo_materia) return false;
+          if (m.turma.identificadorTurma !== turma) return false;
+          return m.turma.horarios.some(
+            (h: any) => h.diaDaSemana === dia_semana && h.horaInicial === hora_inicial
+          );
+        });
+
+        if (!isEnrolled) {
+          return new Response("Você não está matriculado nesta turma/horário.", {
+            status: 403,
+          });
+        }
+
+        const matricula = list[0]?.numeroDoRegistro;
+        if (!matricula) {
+          return new Response("Matrícula não encontrada.", { status: 500 });
+        }
+
+        const userHash = await hashUser(matricula, env.CORRECTION_HASH_SECRET);
+
+        if (!(await withinRateLimit(env, userHash))) {
+          return new Response("Limite diário de sugestões atingido.", { status: 429 });
+        }
+
+        const key = buildCorrectionKey(codigo_materia, turma, dia_semana, hora_inicial);
+        const result = applySubmission(
+          await getCorrection(env, key),
+          roomCheck.room,
+          userHash
+        );
+
+        if ("error" in result) {
+          return new Response(result.error, { status: 400 });
+        }
+
+        await putCorrection(env, key, result.entry);
+
+        return new Response(
+          JSON.stringify(toClientCorrection(result.entry, userHash)),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      } catch {
+        return new Response("Erro ao salvar correção.", { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/logout") {
       return new Response("Logged out", {
         status: 200,
@@ -124,7 +225,6 @@ export default {
     if (url.pathname === "/api/schedule" && request.method === "GET") {
       const cookieHeader = request.headers.get("Cookie") || "";
 
-      // extracts the LtpaToken2 from the Cookie header
       const ltpaMatch = cookieHeader.match(/LtpaToken2=([^;]+)/);
       const ltpaToken = ltpaMatch?.[1];
 
@@ -138,13 +238,33 @@ export default {
         return new Response("Room data not found", { status: 404 });
       }
 
-      return handleScheduleWebSocket(ltpaToken, JSON.parse(roomData));
+      return handleScheduleWebSocket(ltpaToken, JSON.parse(roomData), env);
     }
 
     if (url.pathname === "/api/salas" && request.method === "GET") {
-      const roomDataStr = await env.Salas.get("dados-salas");
+      const roomDataStr = (await env.Salas.get("dados-salas")) || "[]";
+      const roomData = JSON.parse(roomDataStr);
+      const correctionSlots = await listCorrectionSlots(env);
 
-      return new Response(roomDataStr ?? "[]", {
+      const mergedData = roomData.map((sala: any) => {
+        for (const dia of expandDias(sala.dia_semana)) {
+          const key = buildCorrectionKey(
+            sala.codigo_materia,
+            sala.turma,
+            dia,
+            sala.hora_inicial
+          );
+          const approvedRoom = correctionSlots.get(key)?.approvedRoom;
+          // One row cannot express different rooms per day, so on the rare
+          // disagreement the earliest day wins, deterministically.
+          if (approvedRoom) {
+            return { ...sala, nome_sala: approvedRoom };
+          }
+        }
+        return sala;
+      });
+
+      return new Response(JSON.stringify(mergedData), {
         status: 200,
         headers: {
           "Content-Type": "application/json",

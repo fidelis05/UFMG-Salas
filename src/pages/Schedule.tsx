@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import getSchedule from "../services/schedule";
 import type ScheduleResponse from "../../types/scheduleResponse";
+import type ClassItem from "../../types/classItem";
 import { ClassCard } from "../components/ClassCard";
-import { ClassDetail, type SelectedClass } from "../components/ClassDetail";
+import {
+  ClassDetail,
+  type CorrectionApplier,
+  type SelectedClass,
+} from "../components/ClassDetail";
 import { buildSubjectColorMap } from "../utils/scheduleHelpers";
 
 const FALLBACK_COLOR = "#D1D5DB"; // gray-300
@@ -27,8 +32,8 @@ const Schedule = () => {
   const subjectColorMap = useMemo(() => {
     const subjectCodes = (data?.schedule ?? []).flatMap((dayObj) =>
       Object.values(dayObj).flatMap((classes: any) =>
-        classes.map((c: any) => c.subjectCode)
-      )
+        classes.map((c: any) => c.subjectCode),
+      ),
     );
     return buildSubjectColorMap(subjectCodes);
   }, [data]);
@@ -64,6 +69,56 @@ const Schedule = () => {
   useEffect(() => {
     loadData(false);
   }, []);
+
+  // Patched in memory rather than re-fetched: a refetch would hit UFMG on every
+  // suggestion, and KV is eventually consistent so it could return a stale room.
+  const applyCorrection: CorrectionApplier = (slot, correction) => {
+    const matches = (item: ClassItem) =>
+      item.subjectCode === slot.item.subjectCode &&
+      item.class === slot.item.class &&
+      item.startTime === slot.item.startTime;
+
+    const patch = (item: ClassItem): ClassItem => ({
+      ...item,
+      location:
+        correction.status === "approved" && correction.approvedRoom
+          ? correction.approvedRoom
+          : item.location,
+      correction,
+    });
+
+    setData((previous) => {
+      if (!previous) return previous;
+
+      const next: ScheduleResponse = {
+        ...previous,
+        schedule: previous.schedule.map((dayObj) =>
+          Object.fromEntries(
+            Object.entries(dayObj).map(([day, classes]) => [
+              day,
+              day === slot.day
+                ? classes.map((item) => (matches(item) ? patch(item) : item))
+                : classes,
+            ]),
+          ),
+        ),
+      };
+
+      // Keep the cached copy in step, otherwise remounting reverts the change.
+      try {
+        localStorage.setItem("schedule", JSON.stringify(next));
+      } catch {
+        // A full or unavailable localStorage shouldn't break the UI.
+      }
+      return next;
+    });
+
+    setSelected((previous) =>
+      previous && previous.day === slot.day && matches(previous.item)
+        ? { ...previous, item: patch(previous.item) }
+        : previous,
+    );
+  };
 
   const startHour = data?.earliestTime
     ? parseInt(data.earliestTime.split(":")[0])
@@ -213,7 +268,11 @@ const Schedule = () => {
           </button>
         </div>
       </div>
-      <ClassDetail selected={selected} onClose={() => setSelected(null)} />
+      <ClassDetail
+        selected={selected}
+        onClose={() => setSelected(null)}
+        onCorrectionApplied={applyCorrection}
+      />
     </div>
   );
 };

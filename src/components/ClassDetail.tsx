@@ -1,24 +1,66 @@
 import { useEffect, useState } from "react";
 import type ClassItem from "../../types/classItem";
+import type { ClientCorrection } from "../../types/correction";
+import { submitCorrection } from "../services/corrections";
 
 export interface SelectedClass {
   item: ClassItem;
   day: string;
 }
 
+export type CorrectionApplier = (
+  slot: SelectedClass,
+  correction: ClientCorrection,
+) => void;
+
 interface ClassDetailProps {
   selected: SelectedClass | null;
   onClose: () => void;
+  onCorrectionApplied?: CorrectionApplier;
 }
 
 function DetailBody({
   selected,
   onClose,
+  onCorrectionApplied,
 }: {
   selected: SelectedClass;
   onClose: () => void;
+  onCorrectionApplied?: CorrectionApplier;
 }) {
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [suggestedRoom, setSuggestedRoom] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
   const { item, day } = selected;
+
+  const handleSubmit = async (room: string) => {
+    if (!room) return;
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const correction = await submitCorrection({
+        codigo_materia: item.subjectCode,
+        turma: item.class,
+        dia_semana: day,
+        hora_inicial: item.startTime,
+        nome_sala: room,
+      });
+      setIsSuggesting(false);
+      setSuggestedRoom("");
+      onCorrectionApplied?.(selected, correction);
+    } catch (e: any) {
+      setError(e.message || "Não foi possível enviar a correção.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const alternativeProposals = (item.correction?.proposals ?? []).filter(
+    (proposal) => proposal.proposedRoom !== item.location,
+  );
+
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-2">
@@ -47,8 +89,81 @@ function DetailBody({
           value={`${item.startTime} - ${item.endTime}`}
         />
         <DetailField label="Duração" value={`${item.duration} min`} />
-        <DetailField label="Local" value={item.location || "Não encontrada"} />
+        <div>
+          <DetailField
+            label="Local"
+            value={item.location || "Não encontrada"}
+          />
+          <button
+            onClick={() => setIsSuggesting(!isSuggesting)}
+            className="text-[#D44A61] text-xs font-semibold mt-1 hover:underline"
+          >
+            {isSuggesting ? "Cancelar" : "Sugerir correção"}
+          </button>
+        </div>
       </div>
+
+      {isSuggesting && (
+        <div className="bg-gray-50 p-3 rounded border border-gray-200">
+          <p className="text-xs font-medium text-gray-700 mb-2">
+            Qual é a sala correta?
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={suggestedRoom}
+              onChange={(e) => setSuggestedRoom(e.target.value)}
+              className="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
+              placeholder="Ex: CAD 1 - Sala 3009"
+              disabled={isSubmitting}
+            />
+            <button
+              onClick={() => handleSubmit(suggestedRoom)}
+              disabled={isSubmitting || !suggestedRoom}
+              className="bg-[#D44A61] text-white text-xs px-3 py-1 rounded font-semibold disabled:opacity-50"
+            >
+              Enviar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p className="bg-red-50 border border-red-200 text-red-700 text-xs rounded px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      {alternativeProposals.length > 0 && !isSuggesting && (
+        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded mt-2 space-y-3">
+          {alternativeProposals.map((prop, idx) => (
+            <div key={idx} className="flex flex-col">
+              <p className="text-sm text-yellow-800">
+                <strong>Sugestão alternativa:</strong> {prop.proposedRoom}
+              </p>
+              {!prop.isProposer ? (
+                <button
+                  onClick={() => handleSubmit(prop.proposedRoom)}
+                  disabled={isSubmitting}
+                  className="mt-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-900 text-xs px-3 py-1 rounded font-semibold transition-colors self-start"
+                >
+                  Confirmar esta sala
+                </button>
+              ) : (
+                <p className="text-xs text-yellow-600 mt-1">
+                  Sua sugestão. Aguardando confirmação.
+                </p>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={() => setIsSuggesting(true)}
+            className="text-xs text-yellow-700 underline mt-2 text-left"
+          >
+            Nenhuma destas está correta? Sugerir outra.
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 pt-1 border-t border-gray-100">
         <DetailField label="Nível" value={item.level} />
@@ -94,7 +209,11 @@ function DetailField({
   );
 }
 
-export function ClassDetail({ selected, onClose }: ClassDetailProps) {
+export function ClassDetail({
+  selected,
+  onClose,
+  onCorrectionApplied,
+}: ClassDetailProps) {
   const open = selected !== null;
   const [displayed, setDisplayed] = useState<SelectedClass | null>(selected);
 
@@ -116,7 +235,13 @@ export function ClassDetail({ selected, onClose }: ClassDetailProps) {
         }`}
       >
         <div className="w-80 h-full overflow-y-auto p-6">
-          {displayed && <DetailBody selected={displayed} onClose={onClose} />}
+          {displayed && (
+            <DetailBody
+              selected={displayed}
+              onClose={onClose}
+              onCorrectionApplied={onCorrectionApplied}
+            />
+          )}
         </div>
       </div>
 
@@ -139,7 +264,13 @@ export function ClassDetail({ selected, onClose }: ClassDetailProps) {
             open ? "translate-y-0" : "translate-y-full"
           }`}
         >
-          {displayed && <DetailBody selected={displayed} onClose={onClose} />}
+          {displayed && (
+            <DetailBody
+              selected={displayed}
+              onClose={onClose}
+              onCorrectionApplied={onCorrectionApplied}
+            />
+          )}
         </div>
       </div>
     </>

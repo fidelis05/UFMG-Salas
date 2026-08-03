@@ -60,11 +60,17 @@ function formatIcsInstant(d: Date): string {
 }
 
 function escapeIcsText(text: string): string {
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/;/g, "\\;")
-    .replace(/,/g, "\\,")
-    .replace(/\n/g, "\\n");
+  return (
+    text
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      // A raw CR would terminate the line and let a crowdsourced room name
+      // inject arbitrary calendar properties.
+      .replace(/\r\n|\r|\n/g, "\\n")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+  );
 }
 
 // RFC 5545 recommends folding lines at 75 octets, continuation lines start

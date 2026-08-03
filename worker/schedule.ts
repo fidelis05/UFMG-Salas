@@ -1,10 +1,19 @@
 import type ClassItem from "../types/classItem";
 import type ScheduleResponse from "../types/scheduleResponse";
 import type SalaItem from "../types/salaItem";
+import {
+  buildCorrectionKey,
+  getCorrection,
+  hashUser,
+  listCorrectionSlots,
+  toClientCorrection,
+  type CorrectionsEnv,
+} from "./corrections";
 
 export async function handleScheduleWebSocket(
   ltpaToken: string,
-  roomData: SalaItem[]
+  roomData: SalaItem[],
+  env: CorrectionsEnv,
 ) {
   const webSocketPair = new WebSocketPair();
   const [client, server] = Object.values(webSocketPair);
@@ -16,13 +25,12 @@ export async function handleScheduleWebSocket(
       const data = await fetchAndProcessSchedule(
         ltpaToken,
         roomData,
+        env,
         (status) => {
-          // send progress updates through the socket
           server.send(JSON.stringify({ type: "progress", status }));
-        }
+        },
       );
 
-      // final data
       server.send(JSON.stringify({ type: "data", payload: data }));
       server.close(1000, "Done");
     } catch (err: any) {
@@ -31,14 +39,14 @@ export async function handleScheduleWebSocket(
     }
   })();
 
-  // THIS is the response the runtime is looking for to prevent the "hung" error
+  // Returning the 101 here is what stops the runtime reporting a hung request.
   return new Response(null, {
     status: 101,
     webSocket: client,
   });
 }
 
-async function fetchMatriculas(ltpaToken: string): Promise<any> {
+export async function fetchMatriculas(ltpaToken: string): Promise<any> {
   const response = await fetch(
     "https://sistemas.ufmg.br/siga-ws/seam/resource/rest/WsMatriculas",
     {
@@ -46,10 +54,9 @@ async function fetchMatriculas(ltpaToken: string): Promise<any> {
       headers: {
         Cookie: `LtpaToken2=${ltpaToken}`,
       },
-    }
+    },
   );
 
-  // handle ISO-8859-1 encoding properly
   const arrayBuffer = await response.arrayBuffer();
   const decoder = new TextDecoder("iso-8859-1");
   const text = decoder.decode(arrayBuffer);
@@ -65,14 +72,25 @@ async function fetchMatriculas(ltpaToken: string): Promise<any> {
 export async function fetchAndProcessSchedule(
   ltpaToken: string,
   roomData: SalaItem[],
-  onProgress?: (status: string) => void
+  env: CorrectionsEnv,
+  onProgress?: (status: string) => void,
 ): Promise<ScheduleResponse> {
   if (onProgress) onProgress("FETCHING_FROM_UNIVERSITY");
   const body = await fetchMatriculas(ltpaToken);
 
   if (onProgress) onProgress("PROCESSING_ROOMS");
 
-  // collect every horario's start/end time, used below to find the day's bounds
+  // Without the secret no pseudonymous id can be derived, so proposals just never
+  // come back flagged as the viewer's own; reading the schedule still works.
+  const matricula = body.listaObj?.[0]?.matriculas?.[0]?.numeroDoRegistro;
+  const userHash =
+    matricula && env.CORRECTION_HASH_SECRET
+      ? await hashUser(matricula, env.CORRECTION_HASH_SECRET)
+      : "";
+
+  // One list() shows which slots carry corrections; only those need a full read.
+  const correctionSlots = await listCorrectionSlots(env);
+
   const allTimes: string[] = [];
 
   body.listaObj[0].matriculas.forEach((subject: any) => {
@@ -81,31 +99,54 @@ export async function fetchAndProcessSchedule(
     });
   });
 
-  // group classes by day of week
   const scheduleByDay: { [key: string]: ClassItem[] } = {};
 
-  body.listaObj[0].matriculas.forEach((subject: any) => {
-    subject.turma.horarios.forEach((horario: any) => {
+  for (const subject of body.listaObj[0].matriculas) {
+    for (const horario of subject.turma.horarios) {
       const dayKey = horario.diaDaSemana;
       if (!scheduleByDay[dayKey]) {
         scheduleByDay[dayKey] = [];
+      }
+
+      const subjectCode = subject.turma.atividadeAcademica.codigo;
+      const classCode = subject.turma.identificadorTurma;
+
+      let location = findRoom({
+        roomData: roomData,
+        subjectCode,
+        classCode,
+        startTime: horario.horaInicial,
+        day: dayKey,
+      })!;
+
+      const correctionKey = buildCorrectionKey(
+        subjectCode,
+        classCode,
+        dayKey,
+        horario.horaInicial,
+      );
+
+      let correctionData: ClassItem["correction"];
+
+      if (correctionSlots.has(correctionKey)) {
+        const entry = await getCorrection(env, correctionKey);
+        if (entry) {
+          if (entry.status === "approved" && entry.approvedRoom) {
+            location = entry.approvedRoom;
+          }
+          correctionData = toClientCorrection(entry, userHash);
+        }
       }
 
       const classItem: ClassItem = {
         startTime: horario.horaInicial,
         endTime: horario.horaFinal,
         duration: calculateDuration(horario.horaInicial, horario.horaFinal),
-        location: findRoom({
-          roomData: roomData,
-          subjectCode: subject.turma.atividadeAcademica.codigo,
-          classCode: subject.turma.identificadorTurma,
-          startTime: horario.horaInicial,
-          day: dayKey,
-        })!,
+        location,
         subjectName: subject.turma.atividadeAcademica.nomeReduzido,
-        subjectCode: subject.turma.atividadeAcademica.codigo,
+        subjectCode,
         description: subject.turma.atividadeAcademica.ementaAtual,
-        class: subject.turma.identificadorTurma,
+        class: classCode,
         professor:
           subject.turma.professores.length > 0
             ? subject.turma.professores.map((prof: any) => prof.contrato.nome)
@@ -114,23 +155,22 @@ export async function fetchAndProcessSchedule(
         workload: subject.turma.atividadeAcademica.cargaHoraria,
         classType: subject.turma.tipoDaTurma,
         department: subject.turma.ofertanteResponsavel,
+        correction: correctionData,
       };
 
       scheduleByDay[dayKey].push(classItem);
-    });
-  });
+    }
+  }
 
-  // convert to array format expected by Response interface
   const scheduleArray = Object.keys(scheduleByDay).map((day) => ({
     [day]: scheduleByDay[day],
   }));
 
-  // calculate earliest and latest times
   const earliestTime = allTimes.reduce((earliest, time) =>
-    time < earliest ? time : earliest
+    time < earliest ? time : earliest,
   );
   const latestTime = allTimes.reduce((latest, time) =>
-    time > latest ? time : latest
+    time > latest ? time : latest,
   );
 
   const data: ScheduleResponse = {
@@ -178,7 +218,7 @@ export function findRoom({
         sala.hora_inicial === startTime &&
         sala.dia_semana
           .toLowerCase()
-          .includes(day.substring(0, 3).toLowerCase())
+          .includes(day.substring(0, 3).toLowerCase()),
     )?.nome_sala || "Sala não encontrada"
   );
 }

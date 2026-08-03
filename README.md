@@ -44,6 +44,21 @@ npx wrangler kv namespace create Salas
 
 Copie o `id` retornado e atualize o campo `kv_namespaces[0].id` em `wrangler.jsonc`.
 
+#### Configurar o segredo das correções
+
+As correções de sala enviadas por estudantes são associadas a um identificador
+pseudônimo derivado da matrícula. Esse identificador é um HMAC, não um hash
+simples: matrículas da UFMG são curtas e sequenciais, então um SHA-256 sem
+segredo seria reversível e revelaria quem sugeriu cada sala.
+
+```bash
+npx wrangler secret put CORRECTION_HASH_SECRET
+```
+
+Sem esse segredo o worker **recusa** gravar correções (`503`), em vez de gravar
+com identificadores fracos. A leitura da grade e da busca continua funcionando
+normalmente. Para desenvolvimento local, defina a variável em um arquivo `.env`.
+
 #### Rodar em desenvolvimento
 
 ```bash
