@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type ClassItem from "../../types/classItem";
 import type { ClientCorrection } from "../../types/correction";
 import { submitCorrection } from "../services/corrections";
+import { useSwipeDismiss } from "../hooks/useSwipeDismiss";
 
 export interface SelectedClass {
   item: ClassItem;
@@ -216,6 +217,7 @@ export function ClassDetail({
 }: ClassDetailProps) {
   const open = selected !== null;
   const [displayed, setDisplayed] = useState<SelectedClass | null>(selected);
+  const { sheetRef, dragY, dragging } = useSwipeDismiss(open, onClose);
 
   useEffect(() => {
     if (selected) {
@@ -258,11 +260,14 @@ export function ClassDetail({
           className="absolute inset-0 bg-black/40"
           onClick={onClose}
           aria-hidden="true"
+          style={{ opacity: 1 - Math.min(dragY / 240, 0.75) }}
         />
         <div
-          className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto transition-transform duration-300 ease-in-out ${
-            open ? "translate-y-0" : "translate-y-full"
-          }`}
+          ref={sheetRef}
+          className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto overscroll-contain ease-in-out ${
+            dragging ? "transition-none" : "transition-transform duration-300"
+          } ${open ? "translate-y-0" : "translate-y-full"}`}
+          style={dragY ? { transform: `translateY(${dragY}px)` } : undefined}
         >
           {displayed && (
             <DetailBody
